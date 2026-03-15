@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import pandas as pd
+
+from src.analytics.correlation import compute_log_return_correlation_matrix
+from src.analytics.dispersion_metrics import add_dispersion_metrics
 from src.analytics.alignment import load_market_data
 from src.analytics.contributions import compute_latest_contributions
 from src.analytics.implied_corr import compute_implied_correlation_history, current_percentile
@@ -17,7 +21,6 @@ def build_analytics(
     end_date,
     drop_missing_dates: bool,
     realized_window: int,
-    return_type: str,
 ) -> AnalyticsResult:
     """Load data and compute the full analytics payload."""
     market_data = load_market_data(
@@ -26,6 +29,7 @@ def build_analytics(
         start_date=start_date,
         end_date=end_date,
         drop_missing_dates=drop_missing_dates,
+        realized_window=realized_window,
     )
 
     weights = market_data.basket_definition.weights
@@ -34,15 +38,15 @@ def build_analytics(
         constituent_vols=market_data.constituent_vols,
         weights=weights,
     )
-    realized_history, corr_matrix = compute_realized_correlation_history(
-        constituent_prices=market_data.constituent_prices,
+    realized_history = compute_realized_correlation_history(
+        basket_rvol=market_data.basket_rvol,
+        constituent_rvols=market_data.constituent_rvols,
         weights=weights,
-        window=realized_window,
-        return_type=return_type,
     )
 
     history = implied_history.join(realized_history, how="left")
-    history["implied_minus_realized"] = history["rho_imp_full"] - history["rho_realized"]
+    history = add_dispersion_metrics(history)
+    history["implied_minus_realized"] = history["corr_spread"]
     history["implied_corr_percentile"] = current_percentile(history["rho_imp_full"])
     history["implied_corr_zscore"] = z_score(history["rho_imp_full"])
 
@@ -57,6 +61,7 @@ def build_analytics(
     latest_snapshot["implied_corr_percentile"] = current_percentile(history["rho_imp_full"])
     latest_snapshot["latest_realized_corr"] = latest_snapshot.get("rho_realized")
     latest_snapshot["latest_date"] = history.index.max()
+    corr_matrix = compute_log_return_correlation_matrix(market_data.constituent_prices, forward_fill=not drop_missing_dates)
 
     return AnalyticsResult(
         historical=history,

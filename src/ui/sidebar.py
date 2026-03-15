@@ -23,7 +23,6 @@ def render_sidebar(min_date: date, max_date: date) -> tuple[AppControls, object,
         )
         end_date = st.date_input("End date", value=max_date, min_value=min_date, max_value=max_date)
         realized_window = st.selectbox("Rolling realized window", options=[20, 60, 120], index=1)
-        return_type = st.selectbox("Return type", options=["log", "simple"], index=0)
         display_method = st.selectbox("Display comparison", options=["full", "approx"], index=0)
         normalize_weights_if_one = st.checkbox("Normalize weights if file sums to 1", value=True)
         drop_missing_dates = st.checkbox("Drop missing dates conservatively", value=True)
@@ -33,7 +32,6 @@ def render_sidebar(min_date: date, max_date: date) -> tuple[AppControls, object,
         start_date=start_date,
         end_date=end_date,
         realized_window=realized_window,
-        return_type=return_type,
         display_method=display_method,
         normalize_weights_if_one=normalize_weights_if_one,
         drop_missing_dates=drop_missing_dates,

@@ -11,7 +11,7 @@ import streamlit as st
 from src.charts.contribution_charts import contribution_bar_chart, constituent_scatter_chart
 from src.charts.correlation_charts import implied_correlation_chart, realized_heatmap, spread_chart
 from src.charts.vol_charts import volatility_comparison_chart
-from src.config import PRICE_DIR, SAMPLE_DIR, VOL_DIR
+from src.config import PRICE_DIR, RVOL_DIR, SAMPLE_DIR, VOL_DIR
 from src.data_provider import MockCsvDataProvider
 from src.loaders import build_analytics
 from src.ui.messages import build_interpretation
@@ -28,7 +28,7 @@ st.set_page_config(page_title="Implied Correlation Monitor", layout="wide")
 @st.cache_resource
 def get_provider() -> MockCsvDataProvider:
     """Build a cached mock data provider instance."""
-    return MockCsvDataProvider(vol_dir=VOL_DIR, price_dir=PRICE_DIR)
+    return MockCsvDataProvider(vol_dir=VOL_DIR, rvol_dir=RVOL_DIR, price_dir=PRICE_DIR)
 
 
 @st.cache_data
@@ -44,7 +44,6 @@ def compute_payload(
     start_date: date,
     end_date: date,
     realized_window: int,
-    return_type: str,
     drop_missing_dates: bool,
 ):
     """Cacheable wrapper for parsing and analytics."""
@@ -56,7 +55,6 @@ def compute_payload(
         end_date=end_date,
         drop_missing_dates=drop_missing_dates,
         realized_window=realized_window,
-        return_type=return_type,
     )
     return validation, analytics
 
@@ -76,7 +74,7 @@ def render_metric_row(snapshot: pd.Series) -> None:
     cols[2].metric("Implied - Realized", format_pct(snapshot.get("implied_minus_realized")))
     percentile = snapshot.get("implied_corr_percentile")
     cols[3].metric("Percentile", "N/A" if pd.isna(percentile) else f"{percentile * 100:.0f}%")
-    cols[4].metric("Weighted Constituent Variance", format_pct(snapshot.get("weighted_constituent_variance")))
+    cols[4].metric("JPM Corr Proxy", format_pct(snapshot.get("rho_proxy")))
 
 
 def render_waiting_state() -> None:
@@ -125,7 +123,6 @@ def main() -> None:
                 "start_date": controls.start_date,
                 "end_date": controls.end_date,
                 "realized_window": controls.realized_window,
-                "return_type": controls.return_type,
                 "drop_missing_dates": controls.drop_missing_dates,
                 "display_method": controls.display_method,
             }
@@ -142,7 +139,6 @@ def main() -> None:
             start_date=request["start_date"],
             end_date=request["end_date"],
             realized_window=request["realized_window"],
-            return_type=request["return_type"],
             drop_missing_dates=request["drop_missing_dates"],
         )
     except (BasketValidationError, ValueError, FileNotFoundError) as exc:
@@ -200,7 +196,11 @@ def main() -> None:
             [
                 ("Basket implied vol", format_pct(latest.get("basket_implied_vol"))),
                 ("Weighted constituent vol", format_pct(latest.get("weighted_constituent_vol"))),
-                ("Weighted constituent variance", format_pct(latest.get("weighted_constituent_variance"))),
+                ("Diagonal term", format_number(latest.get("diag_term"), 6)),
+                ("Cross term", format_number(latest.get("cross_term"), 6)),
+                ("Weighted constituent variance", format_number(latest.get("weighted_constituent_variance"), 6)),
+                ("Correlation proxy", format_pct(latest.get("rho_proxy"))),
+                ("Correlation spread", format_pct(latest.get("corr_spread"))),
                 ("Implied correlation z-score", format_number(latest.get("implied_corr_zscore"))),
             ],
             columns=["Metric", "Value"],
@@ -220,11 +220,14 @@ def main() -> None:
         )
         st.dataframe(analytics.constituent_snapshot, use_container_width=True, hide_index=True)
         if not analytics.realized_correlation_matrix.empty:
+            st.caption("Heatmap below is computed from unadjusted constituent price returns and is separate from the dividend-adjusted realized-correlation proxy.")
             st.plotly_chart(
                 realized_heatmap(analytics.realized_correlation_matrix),
                 use_container_width=True,
                 key="constituents_realized_heatmap",
             )
+        else:
+            st.info("Not enough constituent price history was available to compute a return-correlation heatmap.")
 
     with tabs[4]:
         st.write("Excluded tickers and reasons")
@@ -238,11 +241,14 @@ def main() -> None:
 
         st.write("Volatility coverage")
         st.dataframe(analytics.diagnostics.vol_date_coverage, use_container_width=True, hide_index=True)
+        st.write("Realized volatility coverage")
+        st.dataframe(analytics.diagnostics.rvol_date_coverage, use_container_width=True, hide_index=True)
         st.write("Price coverage")
         st.dataframe(analytics.diagnostics.price_date_coverage, use_container_width=True, hide_index=True)
         dropped_frame = pd.DataFrame(
             [
                 ("Dropped vol dates", analytics.diagnostics.dropped_vol_dates),
+                ("Dropped realized vol dates", analytics.diagnostics.dropped_rvol_dates),
                 ("Dropped price dates", analytics.diagnostics.dropped_price_dates),
             ],
             columns=["Metric", "Value"],
@@ -261,10 +267,13 @@ def main() -> None:
         st.markdown("### Realized correlation proxy")
         st.markdown(
             r"""
-            The app uses a rolling constituent covariance matrix, computes basket realized variance as
-            $w^\top \Sigma_t w$, and backs out an average constant realized correlation with the same
-            variance decomposition.
+            The app uses dividend-adjusted realized vol series from the data provider for the basket and
+            its constituents, then backs out an average constant realized correlation using the same
+            basket variance decomposition:
             """
+        )
+        st.latex(
+            r"\rho_{realized}(t)=\frac{\sigma_{basket,realized}(t)^2-\sum_i w_i^2 \sigma_{i,realized}(t)^2}{\sum_{i \neq j} w_i w_j \sigma_{i,realized}(t)\sigma_{j,realized}(t)}"
         )
 
         st.markdown("### Important interpretation notes")

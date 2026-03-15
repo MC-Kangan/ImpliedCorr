@@ -73,7 +73,7 @@ def spread_chart(history: pd.DataFrame) -> go.Figure:
 
 
 def realized_heatmap(corr_matrix: pd.DataFrame) -> go.Figure:
-    """Create a heatmap for the latest realized correlation matrix."""
+    """Create a heatmap for the latest constituent return correlation matrix."""
     figure = go.Figure(
         go.Heatmap(
             z=corr_matrix.to_numpy(),
@@ -84,6 +84,5 @@ def realized_heatmap(corr_matrix: pd.DataFrame) -> go.Figure:
             colorscale="RdBu",
         )
     )
-    figure.update_layout(title="Latest Realized Correlation Matrix", template="plotly_white")
+    figure.update_layout(title="Constituent Return Correlation Heatmap", template="plotly_white")
     return figure
-

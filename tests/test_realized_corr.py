@@ -8,25 +8,24 @@ from src.analytics.realized_corr import compute_realized_correlation_history
 
 
 class RealizedCorrelationTests(unittest.TestCase):
-    def test_realized_history_shape(self) -> None:
-        dates = pd.date_range("2025-01-01", periods=6, freq="B")
-        prices = pd.DataFrame(
+    def test_realized_history_uses_rvol_series(self) -> None:
+        dates = pd.date_range("2025-01-01", periods=3, freq="B")
+        constituent_rvols = pd.DataFrame(
             {
-                "A": [100, 101, 102, 101, 103, 104],
-                "B": [50, 50.5, 51, 50.8, 51.2, 51.7],
+                "A": [0.20, 0.22, 0.24],
+                "B": [0.30, 0.31, 0.33],
             },
             index=dates,
         )
-        history, corr = compute_realized_correlation_history(
-            constituent_prices=prices,
+        basket_rvol = pd.Series([0.196214169, 0.208626460, 0.222710575], index=dates)
+        history = compute_realized_correlation_history(
+            basket_rvol=basket_rvol,
+            constituent_rvols=constituent_rvols,
             weights=pd.Series({"A": 0.5, "B": 0.5}),
-            window=3,
-            return_type="log",
         )
         self.assertEqual(len(history), 3)
-        self.assertEqual(corr.shape, (2, 2))
+        self.assertAlmostEqual(history.iloc[0]["rho_realized"], 0.2, places=6)
 
 
 if __name__ == "__main__":
     unittest.main()
-

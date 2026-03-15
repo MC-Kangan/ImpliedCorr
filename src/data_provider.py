@@ -29,12 +29,16 @@ class DataProvider(Protocol):
     def px(self, ticker: str, start_date: date, end_date: date) -> pd.DataFrame:
         """Return price history for a ticker."""
 
+    def get_rvol(self, ticker: str, window: int, start_date: date, end_date: date) -> pd.DataFrame:
+        """Return realized volatility history for a ticker."""
+
 
 @dataclass
 class MockCsvDataProvider:
     """CSV-backed provider that mirrors the future production interface."""
 
     vol_dir: Path
+    rvol_dir: Path
     price_dir: Path
 
     def _read_csv(self, path: Path, date_col: str = "date") -> pd.DataFrame:
@@ -78,6 +82,16 @@ class MockCsvDataProvider:
             raise ValueError(f"No matching price records found for {ticker}")
         return self._filter_dates(expected, start_date, end_date)
 
+    def get_rvol(self, ticker: str, window: int, start_date: date, end_date: date) -> pd.DataFrame:
+        filename = f"{ticker}_rvol_{window}d.csv"
+        path = self.rvol_dir / filename
+        logger.debug("Loading realized vol data for %s from %s", ticker, path)
+        frame = self._read_csv(path)
+        expected = frame[(frame["ticker"] == ticker) & (frame["window"] == window)]
+        if expected.empty:
+            raise ValueError(f"No matching realized vol records found for {ticker}, window={window}")
+        return self._filter_dates(expected, start_date, end_date)
+
 
 @dataclass
 class CloudDataProvider:
@@ -100,3 +114,7 @@ class CloudDataProvider:
             "CloudDataProvider is a placeholder. Replace this stub with the production cache adapter."
         )
 
+    def get_rvol(self, ticker: str, window: int, start_date: date, end_date: date) -> pd.DataFrame:
+        raise NotImplementedError(
+            "CloudDataProvider is a placeholder. Replace this stub with the production cache adapter."
+        )

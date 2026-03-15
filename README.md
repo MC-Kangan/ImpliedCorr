@@ -6,7 +6,7 @@ This project is a modular Streamlit MVP for analysing implied correlation of an 
 
 - Upload a basket file where the first row is the basket ticker and the remaining rows are constituents.
 - Compute historical implied correlation with the full constant-correlation formula and the shortcut approximation.
-- Compare implied correlation with rolling realized correlation from constituent price history.
+- Compare implied correlation with realized correlation backed out from dividend-adjusted realized vol histories.
 - Inspect weighted variance contributors, volatility diagnostics, and data quality warnings.
 - Keep the data layer abstract so `MockCsvDataProvider` can later be swapped for a production cache adapter.
 
@@ -36,7 +36,7 @@ with the off-diagonal denominator computed as:
 \left(\sum_i w_i \sigma_i(t)\right)^2-\sum_i w_i^2 \sigma_i(t)^2
 ```
 
-This is algebraically identical to summing all ordered off-diagonal pairs and matches the variance identity in the build prompt. The realized-correlation proxy uses the same decomposition with rolling constituent covariance matrices. The app also shows the shortcut approximation separately and labels it as an approximation.
+This is algebraically identical to summing all ordered off-diagonal pairs and matches the variance identity in the build prompt. The realized-correlation proxy uses the same decomposition, but now with dividend-adjusted basket and constituent realized vol series supplied by the data provider via `get_rvol(...)`. The app also shows the shortcut approximation separately and labels it as an approximation.
 
 The methodology tab explains why implied correlation is a simplification and why dispersion-trade PnL is not the same thing as a pure correlation swap payoff.
 
@@ -64,7 +64,7 @@ streamlit run app.py
 ## Using the app
 
 1. Upload `data/samples/sx7p_members.csv` or a file in the same format.
-2. Choose the date range, realized window, return type, and data-cleaning options from the sidebar.
+2. Choose the date range, realized-vol window, and data-cleaning options from the sidebar.
 3. Review the KPI row, historical charts, constituent contributions, and methodology tab.
 
 ## Swapping in the real data source later
@@ -73,10 +73,12 @@ The UI and analytics only depend on the `DataProvider` protocol. To migrate to p
 
 1. Implement a provider class that adapts the real cache interface to:
    - `get_vol(ticker, delta, tenor, start_date, end_date)`
+   - `get_rvol(ticker, window, start_date, end_date)`
    - `px(ticker, start_date, end_date)`
 2. Instantiate that provider in `app.py` instead of `MockCsvDataProvider`.
 3. Keep the returned DataFrame schema the same:
    - Vols: `date,ticker,delta,tenor,implied_vol`
+   - Realized vols: `date,ticker,window,realized_vol`
    - Prices: `date,ticker,close`
 
 No analytics modules need to change if the provider preserves that contract.
@@ -88,4 +90,3 @@ The tests use Python's built-in `unittest` runner, so you can run them even befo
 ```bash
 python -m unittest discover -s tests
 ```
-

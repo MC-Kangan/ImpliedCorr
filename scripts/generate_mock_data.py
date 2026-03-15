@@ -10,6 +10,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 VOL_DIR = ROOT / "data" / "vols"
 PRICE_DIR = ROOT / "data" / "prices"
+RVOL_DIR = ROOT / "data" / "rvols"
 
 BASKET = "SX7P Index"
 CONSTITUENTS = [
@@ -25,6 +26,7 @@ CONSTITUENTS = [
 def ensure_dirs() -> None:
     VOL_DIR.mkdir(parents=True, exist_ok=True)
     PRICE_DIR.mkdir(parents=True, exist_ok=True)
+    RVOL_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def generate() -> None:
@@ -56,6 +58,8 @@ def generate() -> None:
 
     basket_returns = sum(weights[i] * member_returns[ticker] for i, (ticker, _) in enumerate(CONSTITUENTS))
     basket_prices = 100.0 * np.exp(np.cumsum(basket_returns))
+    member_return_frame = pd.DataFrame(member_returns, index=dates)
+    basket_return_series = pd.Series(basket_returns, index=dates, name=BASKET)
 
     member_vol_frame = pd.DataFrame(member_vols, index=dates)
     weighted_sq_term = (member_vol_frame.pow(2) * np.square(weights)).sum(axis=1)
@@ -96,7 +100,31 @@ def generate() -> None:
     basket_vol_frame.to_csv(VOL_DIR / f"{BASKET}_vol_50d_1y.csv", index=False)
     basket_px_frame.to_csv(PRICE_DIR / f"{BASKET}_px.csv", index=False)
 
+    for window in [20, 60, 120]:
+        member_rvol_frame = member_return_frame.rolling(window).std() * np.sqrt(252.0)
+        basket_rvol_series = basket_return_series.rolling(window).std() * np.sqrt(252.0)
+
+        for ticker, _ in CONSTITUENTS:
+            rvol_frame = pd.DataFrame(
+                {
+                    "date": dates,
+                    "ticker": ticker,
+                    "window": window,
+                    "realized_vol": member_rvol_frame[ticker].round(6),
+                }
+            )
+            rvol_frame.to_csv(RVOL_DIR / f"{ticker}_rvol_{window}d.csv", index=False)
+
+        basket_rvol_frame = pd.DataFrame(
+            {
+                "date": dates,
+                "ticker": BASKET,
+                "window": window,
+                "realized_vol": basket_rvol_series.round(6),
+            }
+        )
+        basket_rvol_frame.to_csv(RVOL_DIR / f"{BASKET}_rvol_{window}d.csv", index=False)
+
 
 if __name__ == "__main__":
     generate()
-
